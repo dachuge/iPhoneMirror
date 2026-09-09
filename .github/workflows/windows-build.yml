@@ -67,3 +67,11 @@ jobs:
       - name: Build Release, run tests, and publish Windows x64 output
         shell: pwsh
         run: ./build.ps1 -Configuration Release
+
+      - name: Upload portable iPhoneMirror build
+        uses: actions/upload-artifact@v4
+        with:
+          name: iPhoneMirror-local-control-win-x64
+          path: outputs/iPhoneMirror/**
+          if-no-files-found: error
+          retention-days: 7

@@ -40,6 +40,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     public string VersionText => $"iPhoneMirror {VersionManager.DisplayVersion}";
 
     private readonly MainViewModel _viewModel;
+    private readonly LocalControlServer? _localControlServer;
     private readonly DispatcherTimer _refreshTimer;
     private readonly DispatcherTimer _mediaCastTimer;
     private readonly DispatcherTimer _mediaPlaybackTimer;
@@ -325,6 +326,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _themeControlReady = true;
         _workspaceControlsReady = true;
         _viewModel = new MainViewModel();
+        _localControlServer = LocalControlServer.TryStart(_viewModel);
         MainPreviewHost.PointerInput += OnControlPointerInput;
         MainPreviewHost.KeyboardInput += OnControlKeyboardInput;
         _viewModel.SetMediaCastOutputProviders(
@@ -2270,6 +2272,16 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         await Dispatcher.Yield(DispatcherPriority.Background);
         try
         {
+            try
+            {
+                if (_localControlServer is not null)
+                    await _localControlServer.DisposeAsync();
+            }
+            catch (Exception error)
+            {
+                _viewModel.AddDiagnosticLog(AppLog.Event("local_control_shutdown_failed",
+                    ("error", AppLog.Error(error))));
+            }
             try
             {
                 StopMediaCastPlayback("window_closing");
