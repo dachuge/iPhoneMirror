@@ -271,9 +271,15 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private bool IsBluetoothControlActive => IsBluetoothControlActiveFor(
         _activeControlWindow != 0 ? _activeControlUdid : _viewModel.SelectedDevice?.Udid);
 
+    // A configured local-control server owns the Bluetooth HID input route.
+    // Keep the ordinary Windows pointer and keyboard available so an automation
+    // client can drive iOS without the desktop UI capturing physical input.
+    private bool IsLocalControlApiMode => _localControlServer is not null;
+
     private bool IsBluetoothControlActiveFor(string? udid)
     {
-        if (_bossKeyHidden || !_viewModel.BluetoothControlIsInputEnabled ||
+        if (_bossKeyHidden || IsLocalControlApiMode ||
+            !_viewModel.BluetoothControlIsInputEnabled ||
             string.IsNullOrWhiteSpace(udid) ||
             !_viewModel.IsBluetoothControlTarget(udid)) return false;
         return _activeControlWindow != 0

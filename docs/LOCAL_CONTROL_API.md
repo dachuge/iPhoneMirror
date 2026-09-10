@@ -22,6 +22,12 @@ Before sending commands, start Bluetooth reverse control in iPhoneMirror and
 finish the existing iPhone/iPad pairing and client-binding flow. `GET
 /v1/status` returns `ready: true` when commands are accepted.
 
+While the local API listener is running, iPhoneMirror leaves the Windows mouse
+cursor and keyboard under normal desktop control. Physical Windows input is not
+captured or forwarded to iOS; only authenticated API commands use the Bluetooth
+HID route. Start iPhoneMirror without `IPHONE_MIRROR_CONTROL_TOKEN` to restore
+the original interactive mouse-capture behavior.
+
 ```powershell
 $base = 'http://127.0.0.1:17321'
 $headers = @{ Authorization = "Bearer $env:IPHONE_MIRROR_CONTROL_TOKEN" }
@@ -79,5 +85,6 @@ HID usages.
 - The token is never written to the application log.
 - The listener accepts loopback traffic only and limits request/header sizes.
 - Commands are serialized so key and click press/release pairs cannot overlap.
+- API mode does not hide, clip, or capture the Windows mouse cursor and keyboard.
 - Stopping Bluetooth reverse control makes command endpoints return HTTP 409.
 - Closing iPhoneMirror stops the listener before Bluetooth HID is disposed.
