@@ -12,6 +12,7 @@ internal sealed class MultiDevicePreviewManager : IDisposable
     private readonly MainViewModel viewModel;
     private readonly Func<bool> _isReverseControlHotkeyRegistered;
     private readonly Func<string, nint, bool> _isReverseControlEnabledForWindow;
+    private readonly Func<bool> _keepSystemCursorVisible;
     private readonly Dictionary<string, NativePreviewWindow> _windows =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Task<(bool Success, string Message)>> _opening =
@@ -32,13 +33,15 @@ internal sealed class MultiDevicePreviewManager : IDisposable
 
     internal MultiDevicePreviewManager(MainViewModel viewModel,
         Func<bool>? isReverseControlHotkeyRegistered = null,
-        Func<string, nint, bool>? isReverseControlEnabledForWindow = null)
+        Func<string, nint, bool>? isReverseControlEnabledForWindow = null,
+        Func<bool>? keepSystemCursorVisible = null)
     {
         this.viewModel = viewModel;
         _isReverseControlHotkeyRegistered = isReverseControlHotkeyRegistered ?? (() => false);
         _isReverseControlEnabledForWindow = isReverseControlEnabledForWindow ??
             ((udid, _) => viewModel.BluetoothControlIsInputEnabled &&
                 viewModel.IsBluetoothControlTarget(udid));
+        _keepSystemCursorVisible = keepSystemCursorVisible ?? (() => false);
         viewModel.DeviceSessionHandleChanged += OnDeviceSessionHandleChanged;
         viewModel.DeviceSessionRecoveryStateChanged += OnDeviceSessionRecoveryStateChanged;
         viewModel.DeviceProtectionStateChanged += OnDeviceProtectionStateChanged;
@@ -166,6 +169,7 @@ internal sealed class MultiDevicePreviewManager : IDisposable
                  args => KeyboardInput?.Invoke(device.Udid, args),
                  hwnd => ReverseControlRequested?.Invoke(device.Udid, hwnd),
                  _isReverseControlHotkeyRegistered,
+                 _keepSystemCursorVisible,
                  () => viewModel.IsUsbControlTarget(device.Udid),
                  hwnd => UsbControlRequested?.Invoke(device.Udid, hwnd),
                  hwnd => WirelessControlRequested?.Invoke(device.Udid, hwnd)) || window is null)

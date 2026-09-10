@@ -271,14 +271,15 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private bool IsBluetoothControlActive => IsBluetoothControlActiveFor(
         _activeControlWindow != 0 ? _activeControlUdid : _viewModel.SelectedDevice?.Udid);
 
-    // A configured local-control server owns the Bluetooth HID input route.
-    // Keep the ordinary Windows pointer and keyboard available so an automation
-    // client can drive iOS without the desktop UI capturing physical input.
+    // API mode is also the hybrid desktop-input mode: localhost automation and
+    // pointer input over the preview share the same Bluetooth HID transport.
+    // Unlike the legacy route, hybrid mode never installs process-wide raw
+    // input or hides the Windows cursor globally.
     private bool IsLocalControlApiMode => _localControlServer is not null;
 
     private bool IsBluetoothControlActiveFor(string? udid)
     {
-        if (_bossKeyHidden || IsLocalControlApiMode ||
+        if (_bossKeyHidden ||
             !_viewModel.BluetoothControlIsInputEnabled ||
             string.IsNullOrWhiteSpace(udid) ||
             !_viewModel.IsBluetoothControlTarget(udid)) return false;
@@ -343,7 +344,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             (udid, window) => _activeControlWindow == window &&
                 (IsBluetoothControlActiveFor(udid) ||
                  (_viewModel.UsbControlIsInputEnabled &&
-                  _viewModel.IsUsbControlTarget(udid))));
+                  _viewModel.IsUsbControlTarget(udid))),
+            () => IsLocalControlApiMode);
         _secondaryMirrors.ReverseControlRequested += OnIndependentReverseControlRequested;
         _secondaryMirrors.UsbControlRequested += OnIndependentUsbControlRequested;
         _secondaryMirrors.WirelessControlRequested += OnIndependentWirelessControlRequested;
@@ -915,8 +917,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             _activeControlWindow = 0;
             _activeControlUdid = null;
             ClearBluetoothControlInputState();
-            if (_viewModel.IsBluetoothControlEnabled)
+            if (_viewModel.IsBluetoothControlEnabled && !IsLocalControlApiMode)
                 await _viewModel.DisableBluetoothControlAsync();
+            else if (_viewModel.IsBluetoothControlEnabled)
+                ApplyBluetoothControlInputState(activateIndependentWindow: false);
         }
         catch (Exception error)
         {
@@ -968,7 +972,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 // Independent HWNDs can receive focus before the asynchronous
                 // view-model notification reaches the main window. Assert the
                 // process-wide cursor state on this route as well.
-                SetWindowsCursorHidden(true);
+                SetWindowsCursorHidden(!IsLocalControlApiMode);
             }
             else
                 ClearBluetoothControlInputState();
@@ -1276,14 +1280,15 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             handled = true;
             return 0;
         }
-        if (message == WmSetCursor && IsBluetoothControlActive)
+        if (message == WmSetCursor && IsBluetoothControlActive &&
+            !IsLocalControlApiMode)
         {
             SetWindowsCursorHidden(true);
             handled = true;
             return 1;
         }
         if ((message is WmActivateApp or WmSetFocus) &&
-            IsBluetoothControlActive)
+            IsBluetoothControlActive && !IsLocalControlApiMode)
         {
             SetWindowsCursorHidden(true);
         }
@@ -5312,6 +5317,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         var controlActive = IsBluetoothControlActive;
         var usbControlActive = IsUsbControlActive;
         var usbControlConnected = _viewModel.UsbControlIsInputEnabled;
+        var hybridControl = IsLocalControlApiMode;
         MainPreviewHost.CapturePointerInput =
             (controlActive || usbControlActive) && _activeControlWindow == 0;
         if ((controlActive || usbControlActive) && _activeControlWindow == 0)
@@ -5324,10 +5330,13 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         // USB touch control sends touch coordinates and must leave the
         // Windows pointer visible, including while an independent preview
         // owns the active control route.
-        SetWindowsCursorHidden(controlActive && !usbControlConnected);
-        SetSystemKeySuppression(controlActive);
-        RegisterRawInput(controlActive && _activeControlWindow == 0,
-            (controlActive || usbControlActive) && _activeControlWindow == 0);
+        SetWindowsCursorHidden(controlActive && !usbControlConnected &&
+            !hybridControl);
+        SetSystemKeySuppression(controlActive && !hybridControl);
+        RegisterRawInput(controlActive && !hybridControl &&
+                _activeControlWindow == 0,
+            (controlActive || usbControlActive) && !hybridControl &&
+                _activeControlWindow == 0);
         if (controlActive && _activeControlWindow != 0)
         {
             // Native independent previews only forward input while foreground.

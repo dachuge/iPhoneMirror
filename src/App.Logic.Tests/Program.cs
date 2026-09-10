@@ -1689,8 +1689,13 @@ Equal(true,
     mainWindowCode.Contains("IsBluetoothControlActiveFor(string? udid)",
         StringComparison.Ordinal) &&
     mainWindowCode.Contains("IsLocalControlApiMode", StringComparison.Ordinal) &&
-    mainWindowCode.Contains("_bossKeyHidden || IsLocalControlApiMode ||",
+    !mainWindowCode.Contains("_bossKeyHidden || IsLocalControlApiMode ||",
         StringComparison.Ordinal) &&
+    mainWindowCode.Contains("!hybridControl", StringComparison.Ordinal) &&
+    mainWindowCode.Contains("() => IsLocalControlApiMode", StringComparison.Ordinal) &&
+    nativePreviewWindowCode.Contains("_keepSystemCursorVisible",
+        StringComparison.Ordinal) &&
+    mainWindowCode.Contains("!IsLocalControlApiMode)", StringComparison.Ordinal) &&
     mainWindowCode.Contains("_secondaryMirrors.Activate(_activeControlUdid)",
         StringComparison.Ordinal) &&
     bluetoothHidCode.Contains("NotifyValueAsync(buffer, targetClient)",

@@ -132,6 +132,7 @@ internal sealed class NativePreviewWindow : IDisposable
     private readonly Action? _showProjectionSettings;
     private readonly Func<nint, bool>? _isReverseControlEnabled;
     private readonly Func<bool>? _isReverseControlHotkeyRegistered;
+    private readonly Func<bool>? _keepSystemCursorVisible;
     private readonly Action<PreviewPointerEventArgs>? _pointerInput;
     private readonly Action<PreviewKeyboardEventArgs>? _keyboardInput;
     private readonly Action<nint>? _requestReverseControl;
@@ -179,6 +180,7 @@ internal sealed class NativePreviewWindow : IDisposable
            Action<PreviewKeyboardEventArgs>? keyboardInput = null,
            Action<nint>? requestReverseControl = null,
            Func<bool>? isReverseControlHotkeyRegistered = null,
+           Func<bool>? keepSystemCursorVisible = null,
            Func<bool>? isUsbControlEnabled = null,
            Action<nint>? requestUsbControl = null,
            Action<nint>? requestWirelessControl = null,
@@ -199,6 +201,7 @@ internal sealed class NativePreviewWindow : IDisposable
         _showProjectionSettings = showProjectionSettings;
         _isReverseControlEnabled = isReverseControlEnabled;
         _isReverseControlHotkeyRegistered = isReverseControlHotkeyRegistered;
+        _keepSystemCursorVisible = keepSystemCursorVisible;
         _pointerInput = pointerInput;
         _keyboardInput = keyboardInput;
         _requestReverseControl = requestReverseControl;
@@ -439,6 +442,7 @@ internal sealed class NativePreviewWindow : IDisposable
         Action<PreviewKeyboardEventArgs>? keyboardInput = null,
         Action<nint>? requestReverseControl = null,
         Func<bool>? isReverseControlHotkeyRegistered = null,
+        Func<bool>? keepSystemCursorVisible = null,
         Func<bool>? isUsbControlEnabled = null,
         Action<nint>? requestUsbControl = null,
         Action<nint>? requestWirelessControl = null)
@@ -455,7 +459,8 @@ internal sealed class NativePreviewWindow : IDisposable
                  connectedDeviceCount, setAudioEnabled, muteOtherWindows,
                   showImageSettings, showProjectionSettings,
                   isReverseControlEnabled, pointerInput, keyboardInput, requestReverseControl,
-                  isReverseControlHotkeyRegistered, isUsbControlEnabled, requestUsbControl,
+                  isReverseControlHotkeyRegistered, keepSystemCursorVisible,
+                  isUsbControlEnabled, requestUsbControl,
                   requestWirelessControl,
                   logDiagnostic: logDiagnostic);
             if (!candidate._attachPreview(candidate._handle))
@@ -765,7 +770,10 @@ internal sealed class NativePreviewWindow : IDisposable
                 handled = true;
                 return 1;
             case WmSetCursor when IsReverseControlActive:
-                HideSystemCursor();
+                if (_keepSystemCursorVisible?.Invoke() ?? false)
+                    ShowSystemCursor();
+                else
+                    HideSystemCursor();
                 handled = true;
                 return 1;
             case WmKeyDown or WmSysKeyDown when IsBossKeyHotkey(wParam.ToInt32()):
@@ -1032,7 +1040,8 @@ internal sealed class NativePreviewWindow : IDisposable
 
     private bool IsReverseControlActive => _pointerInput is not null &&
         (_isReverseControlEnabled?.Invoke(_handle) ?? false) &&
-        GetForegroundWindow() == _handle;
+        ((_keepSystemCursorVisible?.Invoke() ?? false) ||
+         GetForegroundWindow() == _handle);
     private bool IsReverseControlEnabledForWindow => _pointerInput is not null &&
         (_isReverseControlEnabled?.Invoke(_handle) ?? false);
     private bool IsUsbControlEnabledForWindow => _pointerInput is not null &&
