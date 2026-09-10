@@ -28,10 +28,6 @@ internal sealed class DeviceCaptureState
     internal uint AdvancedUsbWidth { get; set; }
     internal uint AdvancedUsbHeight { get; set; }
     internal UsbProjectionMode UsbProjectionMode { get; set; } = UsbProjectionMode.Demo;
-    // A single automatic compatibility retry is allowed when the default
-    // Demo handshake gets no PING. This is runtime-only and is reset when the
-    // user explicitly selects a projection mode.
-    internal bool UsbProjectionFallbackAttempted { get; set; }
     internal DecoderPreference DecoderPreference { get; set; } = DecoderPreference.Auto;
     internal double Brightness { get; set; }
     internal double Contrast { get; set; } = 100;

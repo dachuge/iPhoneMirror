@@ -1529,12 +1529,20 @@ void CaptureSession::run(std::stop_token stop_token) noexcept {
                     transport::QtUsbConnection::open_quicktime(*qt_context, identity, false));
             }
         }
-        // libusb1/UsbDk needs an explicit halt clear. The libusb0 filter
-        // backend historically succeeded without this extra control transfer
-        // and starts its bulk read immediately after claiming the discovered
-        // QuickTime interface.
-        if (usb_backend_ != UsbBackend::LibUsb0) {
-            try { usb->clear_halt(); } catch (...) {}
+        // Clear both bulk pipes after claiming the QuickTime interface. Most
+        // libusb0 filter stacks do not require this, but Apple filter stacks
+        // can retain a stalled pipe across the configuration transition. A
+        // failed clear remains non-fatal because the subsequent read provides
+        // the authoritative connection result.
+        try {
+            usb->clear_halt();
+            logging::write(std::format("quicktime_clear_halt backend={} result=success",
+                usb_backend_ == UsbBackend::LibUsb0 ? "libusb0" : "libusb1_or_usbdk"));
+        } catch (const std::exception& error) {
+            logging::write(logging::Level::Warning, "usb", std::format(
+                "quicktime_clear_halt backend={} result=ignored error={}",
+                usb_backend_ == UsbBackend::LibUsb0 ? "libusb0" : "libusb1_or_usbdk",
+                error.what()));
         }
         {
             std::scoped_lock lock(active_usb_mutex_);

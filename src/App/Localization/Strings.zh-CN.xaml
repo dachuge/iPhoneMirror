@@ -551,7 +551,6 @@
     <system:String x:Key="UsbModeAisiNotice">此模式不会使用本项目的原生分辨率探测和横竖屏自适应重配。</system:String>
     <system:String x:Key="UsbProjectionModeSelectedFormat">已选择：{0}</system:String>
     <system:String x:Key="UsbProjectionModeRestarting">正在按新模式重新连接当前有线设备...</system:String>
-    <system:String x:Key="UsbProjectionModeAutoFallback">默认演示模式握手未响应，正在自动切换到 C 爱思模式重试...</system:String>
     <system:String x:Key="UsbProjectionModeAppliedFormat">已应用：{0}</system:String>
     <system:String x:Key="DecoderPreferenceLabel">解码器</system:String>
     <system:String x:Key="DecoderAuto">自动（推荐）</system:String>

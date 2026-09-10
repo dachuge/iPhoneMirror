@@ -551,7 +551,6 @@ Make sure the phone and computer are on the same local network and keep the devi
     <system:String x:Key="UsbModeAisiNotice">This mode does not use this application's native-resolution probing or adaptive orientation reconfiguration.</system:String>
     <system:String x:Key="UsbProjectionModeSelectedFormat">Selected: {0}</system:String>
     <system:String x:Key="UsbProjectionModeRestarting">Reconnecting the current USB device with the new mode...</system:String>
-    <system:String x:Key="UsbProjectionModeAutoFallback">The default Demo handshake did not respond; retrying once with C Aisi mode...</system:String>
     <system:String x:Key="UsbProjectionModeAppliedFormat">Applied: {0}</system:String>
     <system:String x:Key="DecoderPreferenceLabel">Decoder</system:String>
     <system:String x:Key="DecoderAuto">Auto (recommended)</system:String>
