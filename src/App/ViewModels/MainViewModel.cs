@@ -911,6 +911,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
             var state = GetOrCreateDeviceState(device);
             if (state.UsbProjectionMode == value.Mode) return;
             state.UsbProjectionMode = value.Mode;
+            state.UsbProjectionFallbackAttempted = false;
             OnPropertyChanged();
             OnPropertyChanged(nameof(AdvancedSettingsVisibility));
             SetSettingsStatus("UsbProjectionModeSelectedFormat", value.Label);
@@ -4577,10 +4578,46 @@ internal sealed class MainViewModel : INotifyPropertyChanged
         }
         finally { _coreGate.Release(); }
 
+        if (await TryAutoRetryUsbProjectionModeAsync(state, status)) return;
+
         // A modal prompt must never own the lifetime of a failed USB session.
         // Stop and destroy first so an unattended error dialog cannot retain
         // device handles or delay Windows shutdown.
         CaptureStatusNoticeWindow.ShowError(errorTitle, errorBody);
+    }
+
+    private async Task<bool> TryAutoRetryUsbProjectionModeAsync(
+        DeviceCaptureState state, NativeCaptureStatus status)
+    {
+        if (state.UsbProjectionFallbackAttempted ||
+            state.UsbProjectionMode != UsbProjectionMode.Demo ||
+            status.FailureStage != CaptureFailureStage.QuickTimeHandshake ||
+            status.ErrorCode != -2104)
+            return false;
+
+        var device = Devices.FirstOrDefault(candidate =>
+            DeviceViewModel.UdidEquals(candidate.Udid, state.Udid));
+        if (device is null || device.IsWireless || _disposed) return false;
+
+        state.UsbProjectionFallbackAttempted = true;
+        state.UsbProjectionMode = UsbProjectionMode.Aisi;
+        state.ErrorShown = false;
+        AddDiagnosticLog(AppLog.Event("usb_projection_mode_auto_fallback",
+            ("device", AppLog.Device(state.Udid)),
+            ("from", UsbProjectionMode.Demo),
+            ("to", UsbProjectionMode.Aisi),
+            ("failure_stage", status.FailureStage),
+            ("error_code", status.ErrorCode)));
+        if (DeviceViewModel.UdidEquals(SelectedDevice?.Udid, state.Udid))
+        {
+            SetSettingsStatus("UsbProjectionModeAutoFallback");
+            OnPropertyChanged(nameof(SelectedUsbProjectionMode));
+        }
+
+        // The failed session has already been stopped and destroyed. StartAsync
+        // owns the normal lifecycle gates and will perform one clean retry.
+        await StartAsync();
+        return true;
     }
 
 
