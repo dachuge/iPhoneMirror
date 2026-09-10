@@ -972,7 +972,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 // Independent HWNDs can receive focus before the asynchronous
                 // view-model notification reaches the main window. Assert the
                 // process-wide cursor state on this route as well.
-                SetWindowsCursorHidden(!IsLocalControlApiMode);
+                if (!IsLocalControlApiMode)
+                    SetWindowsCursorHidden(true);
             }
             else
                 ClearBluetoothControlInputState();
@@ -1240,7 +1241,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _controlPointerTimer.Dispose();
         RegisterRawInput(false, false);
         UnregisterConfiguredHotkeys();
-        SetWindowsCursorHidden(false);
+        if (!IsLocalControlApiMode)
+            SetWindowsCursorHidden(false);
         if (_rawInputBuffer != 0)
         {
             Marshal.FreeHGlobal(_rawInputBuffer);
@@ -5330,8 +5332,12 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         // USB touch control sends touch coordinates and must leave the
         // Windows pointer visible, including while an independent preview
         // owns the active control route.
-        SetWindowsCursorHidden(controlActive && !usbControlConnected &&
-            !hybridControl);
+        // Hybrid mode starts with a normal visible cursor and never changes
+        // ShowCursor's process-wide display counter. Calling the legacy cursor
+        // repair loop here can block the UI when Windows reports a hidden
+        // cursor owned by another HWND/thread.
+        if (!hybridControl)
+            SetWindowsCursorHidden(controlActive && !usbControlConnected);
         SetSystemKeySuppression(controlActive && !hybridControl);
         RegisterRawInput(controlActive && !hybridControl &&
                 _activeControlWindow == 0,
@@ -5352,7 +5358,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         // Hiding a native window or losing its Bluetooth route does not restore
         // process-wide cursor, keyboard, raw-input, or clipping state by itself.
         MainPreviewHost.CapturePointerInput = false;
-        SetWindowsCursorHidden(false);
+        if (!IsLocalControlApiMode)
+            SetWindowsCursorHidden(false);
         SetSystemKeySuppression(false);
         RegisterRawInput(false, false);
         ClipCursor(IntPtr.Zero);

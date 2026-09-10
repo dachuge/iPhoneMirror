@@ -1695,6 +1695,10 @@ Equal(true,
     mainWindowCode.Contains("() => IsLocalControlApiMode", StringComparison.Ordinal) &&
     nativePreviewWindowCode.Contains("_keepSystemCursorVisible",
         StringComparison.Ordinal) &&
+    nativePreviewWindowCode.Contains("!(_keepSystemCursorVisible?.Invoke() ?? false)",
+        StringComparison.Ordinal) &&
+    !nativePreviewWindowCode.Contains("if (_keepSystemCursorVisible?.Invoke() ?? false)",
+        StringComparison.Ordinal) &&
     mainWindowCode.Contains("!IsLocalControlApiMode)", StringComparison.Ordinal) &&
     mainWindowCode.Contains("_secondaryMirrors.Activate(_activeControlUdid)",
         StringComparison.Ordinal) &&

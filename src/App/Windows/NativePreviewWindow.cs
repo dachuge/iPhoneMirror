@@ -769,11 +769,9 @@ internal sealed class NativePreviewWindow : IDisposable
                 ShowSystemCursor();
                 handled = true;
                 return 1;
-            case WmSetCursor when IsReverseControlActive:
-                if (_keepSystemCursorVisible?.Invoke() ?? false)
-                    ShowSystemCursor();
-                else
-                    HideSystemCursor();
+            case WmSetCursor when IsReverseControlActive &&
+                !(_keepSystemCursorVisible?.Invoke() ?? false):
+                HideSystemCursor();
                 handled = true;
                 return 1;
             case WmKeyDown or WmSysKeyDown when IsBossKeyHotkey(wParam.ToInt32()):
