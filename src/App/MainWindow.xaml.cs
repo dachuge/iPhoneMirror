@@ -202,6 +202,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private double _controlWheelRemainder;
     private int _lastWheelResolutionMultiplier = 1;
     private byte _pendingControlButtons;
+    private readonly Queue<byte> _pendingControlButtonTransitions = new();
     private bool _pendingControlStateDirty;
     private long _pendingControlMotionAt;
     private int _controlPointerFlushInFlight;
@@ -770,6 +771,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             _controlWheelRemainder = 0;
             lock (_controlQueueSync)
             {
+                _pendingControlButtonTransitions.Clear();
+                _pendingControlButtonTransitions.Enqueue(0);
                 _pendingControlButtons = 0;
                 _pendingControlStateDirty = true;
             }
@@ -813,6 +816,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         lock (_controlQueueSync)
         {
             _pendingControlButtons = _controlButtons;
+            // A BLE movement notification can still be in flight when a fast
+            // press/release pair arrives. Preserve both button states instead
+            // of allowing the release to overwrite the unsent press.
+            _pendingControlButtonTransitions.Enqueue(_controlButtons);
             _pendingControlStateDirty = true;
         }
         StartControlPointerTimer();
@@ -852,7 +859,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             lock (_controlQueueSync)
             {
                 if (!force && _pendingControlDx == 0 && _pendingControlDy == 0 &&
-                    _pendingControlWheel == 0 && !_pendingControlStateDirty)
+                    _pendingControlWheel == 0 && !_pendingControlStateDirty &&
+                    _pendingControlButtonTransitions.Count == 0)
                 {
                     StopControlPointerTimer();
                     return;
@@ -860,12 +868,15 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 dx = _pendingControlDx;
                 dy = _pendingControlDy;
                 wheel = _pendingControlWheel;
-                buttons = _pendingControlButtons;
+                buttons = _pendingControlButtonTransitions.Count > 0
+                    ? _pendingControlButtonTransitions.Dequeue()
+                    : _pendingControlButtons;
                 motionAt = _pendingControlMotionAt;
                 _pendingControlDx = 0;
                 _pendingControlDy = 0;
                 _pendingControlWheel = 0;
-                _pendingControlStateDirty = false;
+                _pendingControlStateDirty =
+                    _pendingControlButtonTransitions.Count > 0;
                 _pendingControlMotionAt = 0;
             }
             // BLE notifications can occasionally block behind the Bluetooth
@@ -885,7 +896,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             lock (_controlQueueSync)
             {
                 if (_pendingControlDx == 0 && _pendingControlDy == 0 &&
-                    _pendingControlWheel == 0 && !_pendingControlStateDirty)
+                    _pendingControlWheel == 0 && !_pendingControlStateDirty &&
+                    _pendingControlButtonTransitions.Count == 0)
                     StopControlPointerTimer();
                 else
                     StartControlPointerTimer();
@@ -6017,6 +6029,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             _pendingControlDy = 0;
             _pendingControlWheel = 0;
             _pendingControlButtons = 0;
+            _pendingControlButtonTransitions.Clear();
             _pendingControlStateDirty = false;
             _pendingControlMotionAt = 0;
         }
