@@ -1691,7 +1691,12 @@ Equal(true,
     mainWindowCode.Contains("IsLocalControlApiMode", StringComparison.Ordinal) &&
     !mainWindowCode.Contains("_bossKeyHidden || IsLocalControlApiMode ||",
         StringComparison.Ordinal) &&
-    mainWindowCode.Contains("!hybridControl", StringComparison.Ordinal) &&
+    mainWindowCode.Contains("if (hybridControl)", StringComparison.Ordinal) &&
+    mainWindowCode.Contains("hybrid_input_state_applied", StringComparison.Ordinal) &&
+    mainWindowCode.Contains("MainPreviewHost.SuppressMouseMove = false",
+        StringComparison.Ordinal) &&
+    mainWindowCode.Contains("IsLocalControlApiMode && IsBluetoothControlActiveFor(udid)",
+        StringComparison.Ordinal) &&
     mainWindowCode.Contains("() => IsLocalControlApiMode", StringComparison.Ordinal) &&
     nativePreviewWindowCode.Contains("_keepSystemCursorVisible",
         StringComparison.Ordinal) &&

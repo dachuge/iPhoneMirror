@@ -341,10 +341,12 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             afterSequence => _mediaCastAudioDecoder.GetPacket(afterSequence));
         _secondaryMirrors = new MultiDevicePreviewManager(_viewModel,
             () => _hotKeyRegistered,
-            (udid, window) => _activeControlWindow == window &&
-                (IsBluetoothControlActiveFor(udid) ||
-                 (_viewModel.UsbControlIsInputEnabled &&
-                  _viewModel.IsUsbControlTarget(udid))),
+            (udid, window) =>
+                (IsLocalControlApiMode && IsBluetoothControlActiveFor(udid)) ||
+                (_activeControlWindow == window &&
+                 (IsBluetoothControlActiveFor(udid) ||
+                  (_viewModel.UsbControlIsInputEnabled &&
+                   _viewModel.IsUsbControlTarget(udid)))),
             () => IsLocalControlApiMode);
         _secondaryMirrors.ReverseControlRequested += OnIndependentReverseControlRequested;
         _secondaryMirrors.UsbControlRequested += OnIndependentUsbControlRequested;
@@ -868,6 +870,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         if (_viewModel.UsbControlIsInputEnabled && _viewModel.IsUsbControlTarget(udid))
         {
             _ = HandleUsbPointerInputAsync(e, udid);
+            return;
+        }
+        if (IsLocalControlApiMode)
+        {
+            HandleControlPointerInput(e, udid);
             return;
         }
         if (_activeControlWindow == 0 ||
@@ -5320,6 +5327,27 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         var usbControlActive = IsUsbControlActive;
         var usbControlConnected = _viewModel.UsbControlIsInputEnabled;
         var hybridControl = IsLocalControlApiMode;
+
+        if (hybridControl)
+        {
+            // Hybrid mode is deliberately isolated from the legacy global
+            // input-state transition. Preview HWNDs deliver ordinary pointer
+            // messages only while the physical cursor is over them, while the
+            // localhost API keeps using the same HID service independently.
+            MainPreviewHost.CapturePointerInput = controlActive || usbControlActive;
+            MainPreviewHost.SuppressMouseMove = false;
+            if (!controlActive && !usbControlActive)
+            {
+                ResetControlRouteState();
+                _usbTouchPressed = false;
+            }
+            _viewModel.AddDiagnosticLog(AppLog.Event(
+                "hybrid_input_state_applied",
+                ("bluetooth", controlActive), ("usb", usbControlActive),
+                ("main_preview", MainPreviewHost.CapturePointerInput)));
+            return;
+        }
+
         MainPreviewHost.CapturePointerInput =
             (controlActive || usbControlActive) && _activeControlWindow == 0;
         if ((controlActive || usbControlActive) && _activeControlWindow == 0)
@@ -5332,17 +5360,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         // USB touch control sends touch coordinates and must leave the
         // Windows pointer visible, including while an independent preview
         // owns the active control route.
-        // Hybrid mode starts with a normal visible cursor and never changes
-        // ShowCursor's process-wide display counter. Calling the legacy cursor
-        // repair loop here can block the UI when Windows reports a hidden
-        // cursor owned by another HWND/thread.
-        if (!hybridControl)
-            SetWindowsCursorHidden(controlActive && !usbControlConnected);
-        SetSystemKeySuppression(controlActive && !hybridControl);
-        RegisterRawInput(controlActive && !hybridControl &&
-                _activeControlWindow == 0,
-            (controlActive || usbControlActive) && !hybridControl &&
-                _activeControlWindow == 0);
+        SetWindowsCursorHidden(controlActive && !usbControlConnected);
+        SetSystemKeySuppression(controlActive);
+        RegisterRawInput(controlActive && _activeControlWindow == 0,
+            (controlActive || usbControlActive) && _activeControlWindow == 0);
         if (controlActive && _activeControlWindow != 0)
         {
             // Native independent previews only forward input while foreground.
