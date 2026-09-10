@@ -21,27 +21,17 @@ internal static class ScreenshotService
 
     internal static string CapturePng(Func<VideoFrame?> frameProvider, string destinationPath)
     {
-        ArgumentNullException.ThrowIfNull(frameProvider);
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
+        return SavePng(CreateFrameBitmap(frameProvider), destinationPath);
+    }
 
-        var frame = frameProvider() ??
-            throw new InvalidOperationException(LocalizationService.Get("ScreenshotNoFrame"));
-        var requiredBytes = checked((int)(frame.Stride * frame.Height));
-        if (frame.Width == 0 || frame.Height == 0 || frame.Stride < frame.Width * 4U ||
-            frame.Pixels.Length < requiredBytes)
-        {
-            throw new InvalidDataException(LocalizationService.Get("ScreenshotInvalidFrame"));
-        }
-
-        // NativeCore reuses its copy buffer. Own this frame before another
-        // preview/screenshot request can overwrite it.
-        var pixels = frame.Pixels.AsSpan(0, requiredBytes).ToArray();
-        var bitmap = BitmapSource.Create(
-            checked((int)frame.Width), checked((int)frame.Height),
-            96, 96, PixelFormats.Bgra32, null, pixels, checked((int)frame.Stride));
-        bitmap.Freeze();
-
-        return SavePng(bitmap, destinationPath);
+    internal static byte[] CapturePng(Func<VideoFrame?> frameProvider)
+    {
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(CreateFrameBitmap(frameProvider)));
+        using var output = new MemoryStream();
+        encoder.Save(output);
+        return output.ToArray();
     }
 
     internal static string CaptureVisualPng(FrameworkElement visual, string destinationPath)
@@ -72,5 +62,27 @@ internal static class ScreenshotService
         using var output = new FileStream(fullPath, FileMode.Create, FileAccess.Write, FileShare.Read);
         encoder.Save(output);
         return fullPath;
+    }
+
+    private static BitmapSource CreateFrameBitmap(Func<VideoFrame?> frameProvider)
+    {
+        ArgumentNullException.ThrowIfNull(frameProvider);
+        var frame = frameProvider() ??
+            throw new InvalidOperationException(LocalizationService.Get("ScreenshotNoFrame"));
+        var requiredBytes = checked((int)(frame.Stride * frame.Height));
+        if (frame.Width == 0 || frame.Height == 0 || frame.Stride < frame.Width * 4U ||
+            frame.Pixels.Length < requiredBytes)
+        {
+            throw new InvalidDataException(LocalizationService.Get("ScreenshotInvalidFrame"));
+        }
+
+        // NativeCore reuses its copy buffer. Own this frame before another
+        // preview/screenshot request can overwrite it.
+        var pixels = frame.Pixels.AsSpan(0, requiredBytes).ToArray();
+        var bitmap = BitmapSource.Create(
+            checked((int)frame.Width), checked((int)frame.Height),
+            96, 96, PixelFormats.Bgra32, null, pixels, checked((int)frame.Stride));
+        bitmap.Freeze();
+        return bitmap;
     }
 }

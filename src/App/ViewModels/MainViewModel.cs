@@ -4366,6 +4366,9 @@ internal sealed class MainViewModel : INotifyPropertyChanged
     internal string CaptureScreenshot(string path) =>
         ScreenshotService.CapturePng(_core.GetLatestVideoFrame, path);
 
+    internal byte[] CaptureScreenshotPng() =>
+        ScreenshotService.CapturePng(_core.GetLatestVideoFrame);
+
     private void AddLogLine(string line)
     {
         _visibleLogLines.Enqueue(line);

@@ -153,6 +153,26 @@ internal sealed class LocalControlServer : IAsyncDisposable
             return;
         }
 
+        if (request.Method == "GET" && request.Path == "/v1/screenshot")
+        {
+            try
+            {
+                var png = _target.CaptureScreenshotPng();
+                await WriteBytesAsync(stream, 200, "image/png", png, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is InvalidOperationException or InvalidDataException)
+            {
+                await WriteJsonAsync(stream, 409, new
+                {
+                    ok = false,
+                    error = "no_video_frame",
+                    message = error.Message,
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            return;
+        }
+
         if (request.Method != "POST")
         {
             await WriteJsonAsync(stream, 405, new { ok = false, error = "method_not_allowed" },
@@ -403,6 +423,18 @@ internal sealed class LocalControlServer : IAsyncDisposable
         var header = Encoding.ASCII.GetBytes(
             $"HTTP/1.1 {statusCode} {reason}\r\n" +
             "Content-Type: application/json; charset=utf-8\r\n" +
+            $"Content-Length: {body.Length}\r\nConnection: close\r\n\r\n");
+        await stream.WriteAsync(header, cancellationToken).ConfigureAwait(false);
+        await stream.WriteAsync(body, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task WriteBytesAsync(NetworkStream stream, int statusCode,
+        string contentType, byte[] body, CancellationToken cancellationToken)
+    {
+        var reason = statusCode == 200 ? "OK" : "Error";
+        var header = Encoding.ASCII.GetBytes(
+            $"HTTP/1.1 {statusCode} {reason}\r\n" +
+            $"Content-Type: {contentType}\r\n" +
             $"Content-Length: {body.Length}\r\nConnection: close\r\n\r\n");
         await stream.WriteAsync(header, cancellationToken).ConfigureAwait(false);
         await stream.WriteAsync(body, cancellationToken).ConfigureAwait(false);

@@ -32,6 +32,9 @@ the original interactive mouse-capture behavior.
 $base = 'http://127.0.0.1:17321'
 $headers = @{ Authorization = "Bearer $env:IPHONE_MIRROR_CONTROL_TOKEN" }
 Invoke-RestMethod "$base/v1/status" -Headers $headers
+
+# Save the latest mirrored video frame for visual automation
+Invoke-WebRequest "$base/v1/screenshot" -Headers $headers -OutFile phone.png
 ```
 
 ## Commands
@@ -85,6 +88,7 @@ HID usages.
 - The token is never written to the application log.
 - The listener accepts loopback traffic only and limits request/header sizes.
 - Commands are serialized so key and click press/release pairs cannot overlap.
+- `GET /v1/screenshot` returns the latest mirrored frame as an authenticated PNG.
 - API mode does not hide, clip, or capture the Windows mouse cursor and keyboard.
 - Stopping Bluetooth reverse control makes command endpoints return HTTP 409.
 - Closing iPhoneMirror stops the listener before Bluetooth HID is disposed.
