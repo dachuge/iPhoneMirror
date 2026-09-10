@@ -319,9 +319,12 @@ internal sealed class MainViewModel : INotifyPropertyChanged
     public string BluetoothControlStatus => _bluetoothControlStatus;
     public bool IsBluetoothControlEnabled => _bluetoothControlEnabled;
     internal string? BluetoothControlTargetUdid => _bluetoothControlDeviceUdid;
+    // _bluetoothControl.IsConnected enumerates WinRT GATT subscribers and can
+    // synchronously cross into the Windows Bluetooth service. This property is
+    // also queried from the preview window procedure for every pointer message,
+    // so use the status-event cache here to keep the UI message pump local.
     public bool BluetoothControlIsInputEnabled => _bluetoothControlEnabled &&
-        _bluetoothControlConnected && _bluetoothControlInputEnabled &&
-        _bluetoothControl.IsConnected;
+        _bluetoothControlConnected && _bluetoothControlInputEnabled;
     public bool CanStartBluetoothControl => CanEnableBluetoothControlFor(
         SelectedDevice?.Udid);
     public bool CanStopBluetoothControl => _bluetoothControlEnabled &&

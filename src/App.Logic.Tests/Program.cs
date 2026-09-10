@@ -1697,6 +1697,12 @@ Equal(true,
         StringComparison.Ordinal) &&
     mainWindowCode.Contains("IsLocalControlApiMode && IsBluetoothControlActiveFor(udid)",
         StringComparison.Ordinal) &&
+    mainViewModelSource.Contains(
+        "_bluetoothControlConnected && _bluetoothControlInputEnabled;",
+        StringComparison.Ordinal) &&
+    !mainViewModelSource.Contains(
+        "_bluetoothControlConnected && _bluetoothControlInputEnabled &&",
+        StringComparison.Ordinal) &&
     mainWindowCode.Contains("() => IsLocalControlApiMode", StringComparison.Ordinal) &&
     nativePreviewWindowCode.Contains("_keepSystemCursorVisible",
         StringComparison.Ordinal) &&
