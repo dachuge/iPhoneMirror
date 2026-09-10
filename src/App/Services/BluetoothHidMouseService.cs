@@ -333,9 +333,14 @@ internal sealed class BluetoothHidMouseService : IAsyncDisposable
 
     private void QueuePendingMotionBeforePriorityReport()
     {
-        // Never move historical pointer travel into the priority queue. If the
-        // GATT stack is stalled, that movement is already stale and replaying
-        // it after a button or wheel event causes seconds of visible drift.
+        // A click immediately after movement must land at the position the user
+        // just reached. Preserve only fresh motion ahead of the button report;
+        // stale motion from a blocked GATT stack is still discarded.
+        if (_pendingMouseReport is not null &&
+            _pendingMouseReportTimestamp != 0 &&
+            (Stopwatch.GetTimestamp() - _pendingMouseReportTimestamp) * 1000.0 /
+                Stopwatch.Frequency <= 80)
+            _mousePriorityReports.Enqueue(_pendingMouseReport);
         _pendingMouseReport = null;
         _pendingMouseReportTimestamp = 0;
     }

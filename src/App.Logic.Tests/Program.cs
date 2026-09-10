@@ -1299,6 +1299,12 @@ Equal(true,
         StringComparison.Ordinal),
     "Bluetooth motion keeps only current reports before input-state changes, samples input every four milliseconds, and paces BLE reports at 125 Hz");
 Equal(true,
+    bluetoothHidCode.Contains("_mousePriorityReports.Enqueue(_pendingMouseReport)",
+        StringComparison.Ordinal) &&
+    bluetoothHidCode.Contains("Stopwatch.Frequency <= 80",
+        StringComparison.Ordinal),
+    "a fresh final mouse movement is sent before the following click report");
+Equal(true,
     bluetoothHidCode.Contains("RunGattCallbackAsync", StringComparison.Ordinal) &&
     bluetoothHidCode.Contains("gatt_callback_failed", StringComparison.Ordinal) &&
     !bluetoothHidCode.Contains("private async void OnProtocolModeWriteRequested",
@@ -1449,6 +1455,15 @@ Equal(true,
     !nativePreviewWindowCode.Contains("SetCursor(0);", StringComparison.Ordinal) &&
     mainWindowCode.Contains("ClearBluetoothControlInputState", StringComparison.Ordinal),
     "independent reverse control continuously reasserts the process-wide hidden cursor state");
+Equal(true,
+    mainWindowCode.Contains("PointerSourceToSurfaceScale(e,",
+        StringComparison.Ordinal) &&
+    mainWindowCode.Contains("hybrid_mouse_button", StringComparison.Ordinal) &&
+    mainWindowCode.Contains("SetWindowsCursorHidden(false);",
+        StringComparison.Ordinal) &&
+    mainWindowCode.Contains("return CallNextHookEx(0, code, wParam, lParam);",
+        StringComparison.Ordinal),
+    "hybrid mouse tracks preview pixels, logs clicks, restores the Windows cursor, and never suppresses host input");
 var independentCloseStart = mainWindowCode.IndexOf(
     "private async void OnIndependentPreviewClosed", StringComparison.Ordinal);
 var independentCloseEnd = independentCloseStart >= 0

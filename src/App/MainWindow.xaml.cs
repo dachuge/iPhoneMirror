@@ -715,8 +715,20 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             var dy = (double)(mapped.Y - _lastControlSourceY);
             _lastControlSourceX = mapped.X;
             _lastControlSourceY = mapped.Y;
-            var sensitivity = PointerSensitivity(
-                sourceWidth, sourceHeight) *
+            var hybridPointer = IsLocalControlApiMode && _hybridMouseHook != 0;
+            if (hybridPointer)
+            {
+                // AirPlay can downscale the decoded frame independently of the
+                // preview window. Convert source-pixel deltas back to visible
+                // window pixels so the iOS pointer tracks the physical mouse
+                // at roughly one visual pixel per HID unit.
+                var surfaceScale = PointerSourceToSurfaceScale(e,
+                    sourceWidth, sourceHeight);
+                dx *= surfaceScale.X;
+                dy *= surfaceScale.Y;
+            }
+            var sensitivity = (hybridPointer ? 1.0 : PointerSensitivity(
+                sourceWidth, sourceHeight)) *
                 (_viewModel.AppliedBluetoothMouseSensitivity / 100.0);
             var oriented = MapMouseDeltaToDeviceOrientation(dx, dy,
                 sourceWidth, sourceHeight,
@@ -1111,6 +1123,22 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         return ((int)Math.Round(x), (int)Math.Round(y));
     }
 
+    private static (double X, double Y) PointerSourceToSurfaceScale(
+        Controls.PreviewPointerEventArgs e, uint sourceWidth, uint sourceHeight)
+    {
+        if (sourceWidth == 0 || sourceHeight == 0 || e.SurfaceWidth <= 0 ||
+            e.SurfaceHeight <= 0) return (1, 1);
+        var sourceAspect = (double)sourceWidth / sourceHeight;
+        var surfaceAspect = (double)e.SurfaceWidth / e.SurfaceHeight;
+        var imageWidth = (double)e.SurfaceWidth;
+        var imageHeight = (double)e.SurfaceHeight;
+        if (surfaceAspect > sourceAspect)
+            imageWidth = e.SurfaceHeight * sourceAspect;
+        else if (surfaceAspect < sourceAspect)
+            imageHeight = e.SurfaceWidth / sourceAspect;
+        return (imageWidth / sourceWidth, imageHeight / sourceHeight);
+    }
+
     private static double PointerSensitivity(uint sourceWidth, uint sourceHeight)
     {
         if (sourceWidth == 0 || sourceHeight == 0) return 1.0 / 3.0;
@@ -1267,8 +1295,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _controlPointerTimer.Dispose();
         RegisterRawInput(false, false);
         UnregisterConfiguredHotkeys();
-        if (!IsLocalControlApiMode)
-            SetWindowsCursorHidden(false);
+        SetWindowsCursorHidden(false);
         if (_rawInputBuffer != 0)
         {
             Marshal.FreeHGlobal(_rawInputBuffer);
@@ -5400,8 +5427,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         // process-wide cursor, keyboard, raw-input, or clipping state by itself.
         MainPreviewHost.CapturePointerInput = false;
         SetHybridMouseHook(false);
-        if (!IsLocalControlApiMode)
-            SetWindowsCursorHidden(false);
+        SetWindowsCursorHidden(false);
         SetSystemKeySuppression(false);
         RegisterRawInput(false, false);
         ClipCursor(IntPtr.Zero);
@@ -6935,6 +6961,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         {
             ResetHybridMouseTarget();
             _hybridMouseTargetUdid = udid;
+            SetWindowsCursorHidden(true);
         }
 
         var clientPoint = data.Point;
@@ -6966,6 +6993,12 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         if (kind == Controls.PreviewPointerKind.ButtonDown &&
             TryHandleMouseShortcut(button))
             return CallNextHookEx(0, code, wParam, lParam);
+
+        if (kind is Controls.PreviewPointerKind.ButtonDown or
+            Controls.PreviewPointerKind.ButtonUp)
+            _viewModel.AddDiagnosticLog(AppLog.Event("hybrid_mouse_button",
+                ("kind", kind), ("button", button),
+                ("device", AppLog.Device(udid))));
 
         var wheel = message == WmMouseWheel
             ? unchecked((short)(data.MouseData >> 16)) : 0;
@@ -7011,6 +7044,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         if (string.IsNullOrWhiteSpace(_hybridMouseTargetUdid)) return;
         var previous = _hybridMouseTargetUdid;
         _hybridMouseTargetUdid = null;
+        SetWindowsCursorHidden(false);
         HandleControlPointerInput(new Controls.PreviewPointerEventArgs(
             Controls.PreviewPointerKind.Reset, 0, 0, 0, 0), previous);
         ResetControlRouteState();
