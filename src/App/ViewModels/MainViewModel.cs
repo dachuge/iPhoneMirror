@@ -239,7 +239,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
     private readonly HashSet<string> _knownWirelessDeviceIds =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly WirelessStallRecoveryTracker _wirelessStallRecovery = new();
-    private readonly HashSet<ulong> _wirelessRecoveryInFlight = [];
+    private readonly Dictionary<ulong, string> _wirelessRecoveryInFlight = [];
     private readonly WifiSyncInsertionTracker _wifiSyncInsertionTracker = new();
     // AirPlay discovery is heartbeat based. A missed IPC/Bonjour heartbeat
     // must not remove a device (and stop its preview) immediately; retain the
@@ -430,6 +430,17 @@ internal sealed class MainViewModel : INotifyPropertyChanged
         !string.IsNullOrWhiteSpace(_bluetoothControlDeviceUdid) &&
         _sessions.TryGet(_bluetoothControlDeviceUdid, out var session) &&
         IsSessionPresentable(session);
+
+    private bool IsBluetoothControlTargetRecovering
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_bluetoothControlDeviceUdid)) return false;
+            lock (_wirelessRecoveryInFlight)
+                return _wirelessRecoveryInFlight.Values.Any(udid =>
+                    DeviceViewModel.UdidEquals(udid, _bluetoothControlDeviceUdid));
+        }
+    }
     public double BluetoothMouseSensitivity
     {
         get => _bluetoothMouseSensitivity;
@@ -3185,7 +3196,12 @@ internal sealed class MainViewModel : INotifyPropertyChanged
 
     private void NotifyCaptureSessionChanged()
     {
-        if (!_disposed && _bluetoothControlEnabled && !HasBluetoothControlTargetSession)
+        // A wireless stall recovery briefly destroys and recreates the capture
+        // session. Bluetooth HID is independent of that decoder session, so
+        // keep it alive during the gap instead of forcing the user to reconnect.
+        if (!_disposed && _bluetoothControlEnabled &&
+            !HasBluetoothControlTargetSession &&
+            !IsBluetoothControlTargetRecovering)
             _ = StopBluetoothControlAsync();
         OnPropertyChanged(nameof(CurrentSessionHandle));
         OnPropertyChanged(nameof(HasCaptureSession));
@@ -4517,7 +4533,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
 
         lock (_wirelessRecoveryInFlight)
         {
-            if (!_wirelessRecoveryInFlight.Add(handle)) return;
+            if (!_wirelessRecoveryInFlight.TryAdd(handle, state.Udid)) return;
         }
         _ = RecoverWirelessSessionAsync(state.Udid, handle);
     }

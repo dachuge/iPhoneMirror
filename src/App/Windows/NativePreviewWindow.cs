@@ -373,6 +373,9 @@ internal sealed class NativePreviewWindow : IDisposable
 
     internal event EventHandler? Closed;
     internal ulong SessionHandle => _sessionHandle;
+    internal nint WindowHandle => _handle;
+    internal bool OwnsWindow(nint window) => window != 0 &&
+        (window == _handle || IsChild(_handle, window));
     internal (uint Width, uint Height, int Rotation) ControlGeometry =>
         (_rotation & 1) == 0
             ? (_sourceWidth, _sourceHeight, _rotation)
@@ -1319,6 +1322,10 @@ internal sealed class NativePreviewWindow : IDisposable
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetClientRect(nint window, out WindowRect rectangle);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsChild(nint parent, nint window);
 
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(nint window);

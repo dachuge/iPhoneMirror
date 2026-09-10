@@ -1750,6 +1750,20 @@ Equal(true,
     multiPreviewManagerCode.Contains("internal bool Activate(string? udid)",
         StringComparison.Ordinal),
     "Bluetooth control serializes routing and targets only the selected mirrored device and GATT client");
+Equal(true,
+    mainWindowCode.Contains("SetHybridMouseHook(controlActive)",
+        StringComparison.Ordinal) &&
+    mainWindowCode.Contains("HybridMouseHookProcedure", StringComparison.Ordinal) &&
+    mainWindowCode.Contains("WindowFromPoint(point)", StringComparison.Ordinal) &&
+    mainWindowCode.Contains("return CallNextHookEx(0, code, wParam, lParam);",
+        StringComparison.Ordinal) &&
+    mainWindowCode.Contains("_lastControlSourceX = mapped.X;",
+        StringComparison.Ordinal) &&
+    multiPreviewManagerCode.Contains("TryResolvePointerTarget",
+        StringComparison.Ordinal) &&
+    nativePreviewWindowCode.Contains("internal bool OwnsWindow",
+        StringComparison.Ordinal),
+    "hybrid mode observes unsuppressed desktop mouse events only over preview windows");
 var playbackVolumeStart = mainViewModelSource.IndexOf(
     "public double PlaybackVolume", StringComparison.Ordinal);
 var playAudioStart = mainViewModelSource.IndexOf(
@@ -1791,6 +1805,12 @@ Equal(true,
         StringComparison.Ordinal) &&
     mainViewModelSource.Contains("private void NotifyCaptureSessionChanged()", StringComparison.Ordinal),
     "Bluetooth action availability refreshes for busy, media-source, and capture-session changes");
+Equal(true,
+    mainViewModelSource.Contains("!IsBluetoothControlTargetRecovering",
+        StringComparison.Ordinal) &&
+    mainViewModelSource.Contains("_wirelessRecoveryInFlight.TryAdd(handle, state.Udid)",
+        StringComparison.Ordinal),
+    "wireless session recovery preserves the independent Bluetooth HID connection");
 Equal(true,
     previewRendererCode.Contains("horizontal_gap >= 0.0F && horizontal_gap < 1.0F",
         StringComparison.Ordinal) &&

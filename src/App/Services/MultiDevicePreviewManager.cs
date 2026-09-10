@@ -79,6 +79,21 @@ internal sealed class MultiDevicePreviewManager : IDisposable
         return width != 0 && height != 0;
     }
 
+    internal bool TryResolvePointerTarget(nint hitWindow, out string? udid,
+        out nint previewWindow)
+    {
+        foreach (var pair in _windows)
+        {
+            if (!pair.Value.OwnsWindow(hitWindow)) continue;
+            udid = pair.Key;
+            previewWindow = pair.Value.WindowHandle;
+            return true;
+        }
+        udid = null;
+        previewWindow = 0;
+        return false;
+    }
+
     internal Task<(bool Success, string Message)> ShowAsync(DeviceViewModel device)
     {
         viewModel.AddDiagnosticLog(AppLog.Event("independent_preview_show_requested",

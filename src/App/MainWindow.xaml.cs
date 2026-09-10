@@ -226,6 +226,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private int _bossKeyChanging;
     private nint _keyboardHook;
     private readonly LowLevelKeyboardProc _keyboardHookProc;
+    private nint _hybridMouseHook;
+    private readonly LowLevelMouseProc _hybridMouseHookProc;
+    private string? _hybridMouseTargetUdid;
 
     private const int WmInput = 0x00FF;
     private const int WmHotKey = 0x0312;
@@ -235,6 +238,14 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private const int WmKillFocus = 0x0008;
     private const int WmCancelMode = 0x001F;
     private const int WmCaptureChanged = 0x0215;
+    private const int WmMouseMove = 0x0200;
+    private const int WmLeftButtonDown = 0x0201;
+    private const int WmLeftButtonUp = 0x0202;
+    private const int WmRightButtonDown = 0x0204;
+    private const int WmRightButtonUp = 0x0205;
+    private const int WmMiddleButtonDown = 0x0207;
+    private const int WmMiddleButtonUp = 0x0208;
+    private const int WmMouseWheel = 0x020A;
     private const int BluetoothModeHotKeyId = 0x4991;
     private const int WirelessModeHotKeyId = 0x4992;
     private const int WiredModeHotKeyId = 0x4993;
@@ -303,6 +314,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     public MainWindow()
     {
         _keyboardHookProc = KeyboardHookProcedure;
+        _hybridMouseHookProc = HybridMouseHookProcedure;
         InitializeComponent();
         // Slider handles direct track clicks at the class-handler level and can
         // mark the mouse event handled before an ordinary XAML handler sees it.
@@ -553,6 +565,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void OnControlPointerInput(object? sender,
         Controls.PreviewPointerEventArgs e)
     {
+        if (IsLocalControlApiMode && _hybridMouseHook != 0) return;
         if (_activeControlWindow != 0) return;
         if (e.Kind == Controls.PreviewPointerKind.ButtonDown &&
             TryHandleMouseShortcut(e.Button))
@@ -690,9 +703,13 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             }
             if (!_controlPointerInitialized)
             {
-                _lastControlSourceX = 0;
-                _lastControlSourceY = 0;
+                // Relative HID cannot know the current iOS pointer position.
+                // Anchor at the first Windows coordinate and forward only
+                // subsequent movement, avoiding a large jump on entry.
+                _lastControlSourceX = mapped.X;
+                _lastControlSourceY = mapped.Y;
                 _controlPointerInitialized = true;
+                return;
             }
             var dx = (double)(mapped.X - _lastControlSourceX);
             var dy = (double)(mapped.Y - _lastControlSourceY);
@@ -867,6 +884,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void OnIndependentPointerInput(string udid,
         Controls.PreviewPointerEventArgs e)
     {
+        if (IsLocalControlApiMode && _hybridMouseHook != 0) return;
         if (_viewModel.UsbControlIsInputEnabled && _viewModel.IsUsbControlTarget(udid))
         {
             _ = HandleUsbPointerInputAsync(e, udid);
@@ -1242,6 +1260,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void OnClosed(object? sender, EventArgs e)
     {
         CancelLightweightWindowWidthAnimation();
+        SetHybridMouseHook(false);
         SetSystemKeySuppression(false);
         ClipCursor(IntPtr.Zero);
         StopControlPointerTimer();
@@ -5336,6 +5355,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             // localhost API keeps using the same HID service independently.
             MainPreviewHost.CapturePointerInput = controlActive || usbControlActive;
             MainPreviewHost.SuppressMouseMove = false;
+            SetHybridMouseHook(controlActive);
             if (!controlActive && !usbControlActive)
             {
                 ResetControlRouteState();
@@ -5379,6 +5399,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         // Hiding a native window or losing its Bluetooth route does not restore
         // process-wide cursor, keyboard, raw-input, or clipping state by itself.
         MainPreviewHost.CapturePointerInput = false;
+        SetHybridMouseHook(false);
         if (!IsLocalControlApiMode)
             SetWindowsCursorHidden(false);
         SetSystemKeySuppression(false);
@@ -6877,6 +6898,124 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         return (cursor.Flags & CursorShowing) != 0;
     }
 
+    private void SetHybridMouseHook(bool enabled)
+    {
+        if (enabled)
+        {
+            if (_hybridMouseHook != 0) return;
+            _hybridMouseHook = SetWindowsMouseHookEx(14, _hybridMouseHookProc, 0, 0);
+            _viewModel.AddDiagnosticLog(AppLog.Event("hybrid_mouse_hook",
+                ("enabled", _hybridMouseHook != 0),
+                ("win32_error", _hybridMouseHook == 0 ? Marshal.GetLastWin32Error() : 0)));
+            return;
+        }
+        if (_hybridMouseHook != 0)
+        {
+            UnhookWindowsHookEx(_hybridMouseHook);
+            _hybridMouseHook = 0;
+        }
+        ResetHybridMouseTarget();
+    }
+
+    private nint HybridMouseHookProcedure(int code, nint wParam, nint lParam)
+    {
+        if (code < 0 || !IsLocalControlApiMode ||
+            !_viewModel.BluetoothControlIsInputEnabled)
+            return CallNextHookEx(0, code, wParam, lParam);
+
+        var data = Marshal.PtrToStructure<LowLevelMouseData>(lParam);
+        if (!TryResolveHybridMouseTarget(data.Point, out var udid,
+                out var previewWindow))
+        {
+            ResetHybridMouseTarget();
+            return CallNextHookEx(0, code, wParam, lParam);
+        }
+
+        if (!DeviceViewModel.UdidEquals(_hybridMouseTargetUdid, udid))
+        {
+            ResetHybridMouseTarget();
+            _hybridMouseTargetUdid = udid;
+        }
+
+        var clientPoint = data.Point;
+        if (!ScreenToClient(previewWindow, ref clientPoint) ||
+            !GetClientRect(previewWindow, out var clientRect))
+            return CallNextHookEx(0, code, wParam, lParam);
+
+        var message = wParam.ToInt32();
+        var kind = message switch
+        {
+            WmMouseMove => Controls.PreviewPointerKind.Move,
+            WmLeftButtonDown or WmRightButtonDown or WmMiddleButtonDown =>
+                Controls.PreviewPointerKind.ButtonDown,
+            WmLeftButtonUp or WmRightButtonUp or WmMiddleButtonUp =>
+                Controls.PreviewPointerKind.ButtonUp,
+            WmMouseWheel => Controls.PreviewPointerKind.Wheel,
+            _ => Controls.PreviewPointerKind.Reset,
+        };
+        if (kind == Controls.PreviewPointerKind.Reset)
+            return CallNextHookEx(0, code, wParam, lParam);
+
+        var button = message switch
+        {
+            WmLeftButtonDown or WmLeftButtonUp => (byte)1,
+            WmRightButtonDown or WmRightButtonUp => (byte)2,
+            WmMiddleButtonDown or WmMiddleButtonUp => (byte)4,
+            _ => (byte)0,
+        };
+        if (kind == Controls.PreviewPointerKind.ButtonDown &&
+            TryHandleMouseShortcut(button))
+            return CallNextHookEx(0, code, wParam, lParam);
+
+        var wheel = message == WmMouseWheel
+            ? unchecked((short)(data.MouseData >> 16)) : 0;
+        uint sourceWidth = 0, sourceHeight = 0;
+        var rotation = 0;
+        _secondaryMirrors.TryGetControlGeometry(udid, out sourceWidth,
+            out sourceHeight, out rotation);
+        HandleControlPointerInput(new Controls.PreviewPointerEventArgs(kind,
+            (short)Math.Clamp(clientPoint.X, short.MinValue, short.MaxValue),
+            (short)Math.Clamp(clientPoint.Y, short.MinValue, short.MaxValue),
+            button, wheel,
+            Math.Max(1, clientRect.Right - clientRect.Left),
+            Math.Max(1, clientRect.Bottom - clientRect.Top),
+            sourceWidth, sourceHeight, rotation), udid);
+
+        // Observe only. Windows still receives its normal mouse event, so the
+        // cursor remains usable immediately after leaving the phone preview.
+        return CallNextHookEx(0, code, wParam, lParam);
+    }
+
+    private bool TryResolveHybridMouseTarget(NativePoint point, out string? udid,
+        out nint previewWindow)
+    {
+        var hitWindow = WindowFromPoint(point);
+        var mainPreview = MainPreviewHost.WindowHandle;
+        if (mainPreview != 0 &&
+            (hitWindow == mainPreview || IsChild(mainPreview, hitWindow)))
+        {
+            udid = _viewModel.SelectedDevice?.Udid;
+            previewWindow = mainPreview;
+            return IsBluetoothControlActiveFor(udid);
+        }
+        if (_secondaryMirrors.TryResolvePointerTarget(hitWindow, out udid,
+                out previewWindow))
+            return IsBluetoothControlActiveFor(udid);
+        udid = null;
+        previewWindow = 0;
+        return false;
+    }
+
+    private void ResetHybridMouseTarget()
+    {
+        if (string.IsNullOrWhiteSpace(_hybridMouseTargetUdid)) return;
+        var previous = _hybridMouseTargetUdid;
+        _hybridMouseTargetUdid = null;
+        HandleControlPointerInput(new Controls.PreviewPointerEventArgs(
+            Controls.PreviewPointerKind.Reset, 0, 0, 0, 0), previous);
+        ResetControlRouteState();
+    }
+
     private void SetSystemKeySuppression(bool enabled)
     {
         if (enabled)
@@ -6915,6 +7054,13 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private const uint SwpFrameChanged = 0x0020;
     private const uint SwpShowWindow = 0x0040;
     private static readonly nint HwndTopMost = new(-1);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        internal int X;
+        internal int Y;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeRect
@@ -7016,6 +7162,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private static extern bool GetCursorInfo(ref CursorInfo cursorInfo);
 
     private delegate nint LowLevelKeyboardProc(int code, nint wParam, nint lParam);
+    private delegate nint LowLevelMouseProc(int code, nint wParam, nint lParam);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct LowLevelKeyboardData
@@ -7027,9 +7174,23 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         internal nint ExtraInformation;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LowLevelMouseData
+    {
+        internal NativePoint Point;
+        internal uint MouseData;
+        internal uint Flags;
+        internal uint Time;
+        internal nint ExtraInformation;
+    }
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern nint SetWindowsHookEx(int hookType,
         LowLevelKeyboardProc callback, nint module, uint threadId);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowsHookExW", SetLastError = true)]
+    private static extern nint SetWindowsMouseHookEx(int hookType,
+        LowLevelMouseProc callback, nint module, uint threadId);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -7038,6 +7199,21 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     [DllImport("user32.dll")]
     private static extern nint CallNextHookEx(nint hook, int code,
         nint wParam, nint lParam);
+
+    [DllImport("user32.dll")]
+    private static extern nint WindowFromPoint(NativePoint point);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ScreenToClient(nint window, ref NativePoint point);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetClientRect(nint window, out NativeRect rectangle);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsChild(nint parent, nint window);
 
     [DllImport("user32.dll")]
     private static extern short GetAsyncKeyState(int virtualKey);
